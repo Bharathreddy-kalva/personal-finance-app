@@ -1,21 +1,85 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, X, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import TransactionTable from '@/components/shared/TransactionTable';
 import TransactionDrawer from '@/components/shared/TransactionDrawer';
 import EmptyState from '@/components/shared/EmptyState';
 import { TransactionTableSkeleton } from '@/components/shared/Skeletons';
-import { useLoadingSimulation } from '@/hooks/useLoadingSimulation';
-import { transactions, CATEGORIES, type Transaction } from '@/data/mockData';
+import { getTransactions, type TransactionResponse } from '@/services/financeDataService';
+
+const CATEGORIES = [
+  'Dining',
+  'Groceries',
+  'Transport',
+  'Income',
+  'Shopping',
+  'Bills',
+  'Entertainment',
+  'Utilities',
+];
 
 export default function TransactionsPage() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [selected, setSelected] = useState<Transaction | null>(null);
-  const { data, isLoading } = useLoadingSimulation(transactions, 700);
+  const [selected, setSelected] = useState<any | null>(null);
+  const [items, setItems] = useState<TransactionResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filtered = (data ?? []).filter((tx) => {
-    const matchSearch = tx.merchant.toLowerCase().includes(search.toLowerCase());
+  useEffect(() => {
+    const loadTransactions = async () => {
+      try {
+        const storedUser = localStorage.getItem('user');
+
+        if (!storedUser) {
+          setItems([]);
+          setIsLoading(false);
+          return;
+        }
+
+        const parsedUser = JSON.parse(storedUser);
+        const email = parsedUser?.email;
+
+        if (!email) {
+          setItems([]);
+          setIsLoading(false);
+          return;
+        }
+
+        const data = await getTransactions(email);
+        setItems(data);
+      } catch (error) {
+        console.error('Failed to load transactions:', error);
+        setItems([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadTransactions();
+  }, []);
+
+  const mappedTransactions = useMemo(
+    () =>
+      items.map((tx) => ({
+        id: tx.id,
+        merchant: tx.merchantName,
+        description: tx.description,
+        date: tx.date,
+        amount: tx.amount,
+        category: tx.category,
+        status: tx.status,
+        account: tx.accountName,
+        icon: '💳',
+      })),
+    [items]
+  );
+
+  const filtered = mappedTransactions.filter((tx) => {
+    const matchSearch =
+      tx.merchant.toLowerCase().includes(search.toLowerCase()) ||
+      tx.description.toLowerCase().includes(search.toLowerCase());
+
     const matchCategory = !categoryFilter || tx.category === categoryFilter;
+
     return matchSearch && matchCategory;
   });
 
@@ -26,7 +90,6 @@ export default function TransactionsPage() {
         <p className="text-sm text-muted-foreground mt-1.5">View and manage all your transactions.</p>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="flex items-center gap-2.5 bg-card border border-border rounded-xl px-3.5 py-2.5 flex-1 transition-colors focus-within:border-primary/30">
           <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -42,6 +105,7 @@ export default function TransactionsPage() {
             </button>
           )}
         </div>
+
         <div className="relative">
           <select
             value={categoryFilter}
@@ -49,7 +113,11 @@ export default function TransactionsPage() {
             className="appearance-none bg-card border border-border rounded-xl px-3.5 py-2.5 pr-9 text-sm text-foreground outline-none focus:border-primary/30 transition-colors h-full cursor-pointer"
           >
             <option value="">All Categories</option>
-            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
           </select>
           <ChevronDown className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>

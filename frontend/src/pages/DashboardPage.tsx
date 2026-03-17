@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -23,8 +23,12 @@ import { Button } from '@/components/ui/button';
 import { containerVariants, itemVariants } from '@/lib/animations';
 import { getDashboardSummary, type DashboardSummaryResponse } from '@/services/dashboardService';
 import {
-  transactions,
-  bankAccounts,
+  getAccounts,
+  getTransactions,
+  type BankAccountResponse,
+  type TransactionResponse,
+} from '@/services/financeDataService';
+import {
   budgets,
   monthlySpending,
   categoryBreakdown,
@@ -33,54 +37,101 @@ import {
 export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
+  const [accounts, setAccounts] = useState<BankAccountResponse[]>([]);
+  const [transactions, setTransactions] = useState<TransactionResponse[]>([]);
   const [userName, setUserName] = useState('User');
 
   useEffect(() => {
+    let mounted = true;
+  
     const loadDashboard = async () => {
       try {
         const storedUser = localStorage.getItem('user');
-
+  
         if (!storedUser) {
           setIsLoading(false);
           return;
         }
-
+  
         const parsedUser = JSON.parse(storedUser);
         const email = parsedUser?.email;
         const fullName = parsedUser?.fullName || 'User';
-
+  
         setUserName(fullName.split(' ')[0] || 'User');
-
+  
         if (!email) {
           setIsLoading(false);
           return;
         }
-
-        const data = await getDashboardSummary(email);
-        setSummary(data);
+  
+        const [summaryData, accountsData, transactionsData] =
+          await Promise.all([
+            getDashboardSummary(email),
+            getAccounts(email),
+            getTransactions(email),
+          ]);
+  
+        if (!mounted) return;
+  
+        setSummary(summaryData);
+        setAccounts(accountsData);
+        setTransactions(transactionsData);
       } catch (error) {
-        console.error('Failed to load dashboard summary:', error);
+        console.error('Failed to load dashboard:', error);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
-
+  
     loadDashboard();
+  
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  const mappedAccounts = useMemo(
+    () =>
+      accounts.map((acc) => ({
+        id: acc.id,
+        name: acc.accountName,
+        institution: acc.institutionName,
+        balance: acc.currentBalance,
+        availableBalance: acc.availableBalance,
+        type: acc.type,
+        logo: '🏦',
+        lastSynced: 'Just now',
+      })),
+    [accounts]
+  );
+
+  const mappedTransactions = useMemo(
+    () =>
+      transactions.map((tx) => ({
+        id: tx.id,
+        merchant: tx.merchantName,
+        description: tx.description,
+        date: tx.date,
+        amount: tx.amount,
+        category: tx.category,
+        status: tx.status,
+        account: tx.accountName,
+        icon: '💳',
+      })),
+    [transactions]
+  );
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-8 max-w-7xl">
-      {/* Greeting */}
       <motion.div variants={itemVariants}>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
           Good morning, {userName}
         </h1>
         <p className="text-sm text-muted-foreground mt-1.5">
-          Here&apos;s your financial overview.
+          Here's your financial overview.
         </p>
       </motion.div>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {isLoading ? (
           <StatCardSkeleton count={4} />
@@ -127,7 +178,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {isLoading ? (
           <>
@@ -167,9 +217,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Accounts + Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Bank accounts */}
         <motion.div variants={itemVariants} className="bg-card border border-border rounded-2xl shadow-card overflow-hidden">
           <div className="px-6 py-5 flex justify-between items-center">
             <h3 className="font-semibold text-foreground tracking-tight">Accounts</h3>
@@ -177,6 +225,7 @@ export default function DashboardPage() {
               <Plus className="w-3.5 h-3.5 mr-1" /> Connect
             </Button>
           </div>
+
           {isLoading ? (
             <div className="divide-y divide-border">
               {[1, 2, 3].map((i) => (
@@ -194,8 +243,11 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {bankAccounts.slice(0, 3).map((acc) => (
-                <div key={acc.id} className="px-6 py-4 flex items-center justify-between hover:bg-secondary/40 transition-colors duration-200 cursor-pointer group">
+              {mappedAccounts.slice(0, 3).map((acc) => (
+                <div
+                  key={acc.id}
+                  className="px-6 py-4 flex items-center justify-between hover:bg-secondary/40 transition-colors duration-200 cursor-pointer group"
+                >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center text-lg flex-shrink-0">
                       {acc.logo}
@@ -206,7 +258,11 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className={`text-sm font-semibold tabular-nums ${acc.balance < 0 ? 'text-destructive' : 'text-foreground'}`}>
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        acc.balance < 0 ? 'text-destructive' : 'text-foreground'
+                      }`}
+                    >
                       {acc.balance < 0 ? '-' : ''}${Math.abs(acc.balance).toLocaleString()}
                     </span>
                     <p className="text-[10px] text-muted-foreground">{acc.lastSynced}</p>
@@ -217,7 +273,6 @@ export default function DashboardPage() {
           )}
         </motion.div>
 
-        {/* Recent transactions */}
         <motion.div variants={itemVariants} className="lg:col-span-2 bg-card border border-border rounded-2xl shadow-card overflow-hidden">
           <div className="px-6 py-5 flex justify-between items-center">
             <h3 className="font-semibold text-foreground tracking-tight">Recent Transactions</h3>
@@ -227,13 +282,14 @@ export default function DashboardPage() {
               </Link>
             </Button>
           </div>
+
           {isLoading ? (
             <div className="divide-y divide-border">
               <TransactionRowSkeleton count={6} />
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {transactions.slice(0, 6).map((tx, i) => (
+              {mappedTransactions.slice(0, 6).map((tx, i) => (
                 <TransactionRow key={tx.id} transaction={tx} index={i} compact />
               ))}
             </div>
@@ -241,7 +297,6 @@ export default function DashboardPage() {
         </motion.div>
       </div>
 
-      {/* Budget progress + Quick Insights */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div variants={itemVariants} className="bg-card border border-border rounded-2xl shadow-card overflow-hidden">
           <div className="px-6 py-5 flex justify-between items-center">
@@ -255,6 +310,7 @@ export default function DashboardPage() {
               </Link>
             </Button>
           </div>
+
           <div className="px-6 pb-6 space-y-5">
             {isLoading
               ? Array.from({ length: 4 }).map((_, i) => (
@@ -284,7 +340,9 @@ export default function DashboardPage() {
                           initial={{ width: 0 }}
                           animate={{ width: `${pct}%` }}
                           transition={{ duration: 0.6, delay: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-                          className={`h-full rounded-full ${over ? 'bg-destructive' : pct > 75 ? 'bg-warning' : 'bg-primary'}`}
+                          className={`h-full rounded-full ${
+                            over ? 'bg-destructive' : pct > 75 ? 'bg-warning' : 'bg-primary'
+                          }`}
                         />
                       </div>
                     </div>
@@ -298,6 +356,7 @@ export default function DashboardPage() {
             <h3 className="font-semibold text-foreground tracking-tight">Quick Insights</h3>
             <p className="text-[11px] text-muted-foreground mt-0.5">Budget-based overview</p>
           </div>
+
           <div className="px-6 pb-6 space-y-0 divide-y divide-border">
             {isLoading ? (
               Array.from({ length: 4 }).map((_, i) => (

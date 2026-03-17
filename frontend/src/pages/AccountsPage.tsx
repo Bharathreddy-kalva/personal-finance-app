@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -5,12 +6,55 @@ import AccountCard from '@/components/shared/AccountCard';
 import EmptyState from '@/components/shared/EmptyState';
 import { AccountCardSkeleton } from '@/components/shared/Skeletons';
 import { containerVariants, itemVariants } from '@/lib/animations';
-import { useLoadingSimulation } from '@/hooks/useLoadingSimulation';
-import { bankAccounts } from '@/data/mockData';
+import { getAccounts, type BankAccountResponse } from '@/services/financeDataService';
 
 export default function AccountsPage() {
-  const { data, isLoading } = useLoadingSimulation(bankAccounts, 600);
-  const items = data ?? [];
+  const [items, setItems] = useState<BankAccountResponse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadAccounts = async () => {
+      try {
+        const storedUser = localStorage.getItem('user');
+
+        if (!storedUser) {
+          setItems([]);
+          setIsLoading(false);
+          return;
+        }
+
+        const parsedUser = JSON.parse(storedUser);
+        const email = parsedUser?.email;
+
+        if (!email) {
+          setItems([]);
+          setIsLoading(false);
+          return;
+        }
+
+        const data = await getAccounts(email);
+        setItems(data);
+      } catch (error) {
+        console.error('Failed to load accounts:', error);
+        setItems([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAccounts();
+  }, []);
+
+  const mappedAccounts = items.map((acc) => ({
+    id: acc.id,
+    name: acc.accountName,
+    institution: acc.institutionName,
+    balance: acc.currentBalance,
+    availableBalance: acc.availableBalance,
+    type: acc.type,
+    logo: '🏦',
+    lastSynced: 'Just now',
+  }));
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-8 max-w-5xl">
@@ -28,9 +72,9 @@ export default function AccountsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <AccountCardSkeleton count={3} />
         </div>
-      ) : items.length > 0 ? (
+      ) : mappedAccounts.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((acc) => (
+          {mappedAccounts.map((acc) => (
             <AccountCard key={acc.id} account={acc} variants={itemVariants} />
           ))}
         </div>
