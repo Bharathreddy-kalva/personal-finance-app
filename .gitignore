@@ -19,3 +19,6 @@ target/
 
 # OS files
 Thumbs.db
+# Mac apps / archives accidentally downloaded into repo
+*.zip
+*.app
