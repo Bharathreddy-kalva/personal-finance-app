@@ -1,34 +1,83 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
-  DollarSign, TrendingDown, TrendingUp, Wallet, Plus, ArrowUpRight
+  DollarSign,
+  TrendingDown,
+  AlertTriangle,
+  Wallet,
+  Plus,
+  ArrowUpRight,
 } from 'lucide-react';
 import StatCard from '@/components/shared/StatCard';
 import ChartCard from '@/components/shared/ChartCard';
 import SpendingTrendChart from '@/components/charts/SpendingTrendChart';
 import CategoryPieChart from '@/components/charts/CategoryPieChart';
 import TransactionRow from '@/components/shared/TransactionRow';
-import { StatCardSkeleton, ChartCardSkeleton, TransactionRowSkeleton } from '@/components/shared/Skeletons';
+import {
+  StatCardSkeleton,
+  ChartCardSkeleton,
+  TransactionRowSkeleton,
+} from '@/components/shared/Skeletons';
 import { Button } from '@/components/ui/button';
 import { containerVariants, itemVariants } from '@/lib/animations';
-import { useLoadingSimulation } from '@/hooks/useLoadingSimulation';
+import { getDashboardSummary, type DashboardSummaryResponse } from '@/services/dashboardService';
 import {
-  transactions, bankAccounts, budgets, monthlySpending,
-  categoryBreakdown, dashboardSummary
+  transactions,
+  bankAccounts,
+  budgets,
+  monthlySpending,
+  categoryBreakdown,
 } from '@/data/mockData';
 
 export default function DashboardPage() {
-  const { isLoading } = useLoadingSimulation(true, 900);
-  const summary = dashboardSummary;
+  const [isLoading, setIsLoading] = useState(true);
+  const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
+  const [userName, setUserName] = useState('User');
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      try {
+        const storedUser = localStorage.getItem('user');
+
+        if (!storedUser) {
+          setIsLoading(false);
+          return;
+        }
+
+        const parsedUser = JSON.parse(storedUser);
+        const email = parsedUser?.email;
+        const fullName = parsedUser?.fullName || 'User';
+
+        setUserName(fullName.split(' ')[0] || 'User');
+
+        if (!email) {
+          setIsLoading(false);
+          return;
+        }
+
+        const data = await getDashboardSummary(email);
+        setSummary(data);
+      } catch (error) {
+        console.error('Failed to load dashboard summary:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadDashboard();
+  }, []);
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-8 max-w-7xl">
       {/* Greeting */}
       <motion.div variants={itemVariants}>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-          Good morning, Alex
+          Good morning, {userName}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1.5">Here's your financial overview for March 2025.</p>
+        <p className="text-sm text-muted-foreground mt-1.5">
+          Here&apos;s your financial overview.
+        </p>
       </motion.div>
 
       {/* Stat cards */}
@@ -37,10 +86,43 @@ export default function DashboardPage() {
           <StatCardSkeleton count={4} />
         ) : (
           <>
-            <StatCard label="Total Balance" value={`$${summary.totalBalance.toLocaleString()}`} trend="2.4%" trendType="up" icon={DollarSign} index={0} accent />
-            <StatCard label="Monthly Spending" value={`$${summary.monthlySpending.toLocaleString()}`} trend="18%" trendType="down" icon={TrendingDown} index={1} />
-            <StatCard label="Monthly Income" value={`$${summary.monthlyIncome.toLocaleString()}`} trend="3.1%" trendType="up" icon={TrendingUp} index={2} />
-            <StatCard label="Savings" value={`$${summary.savings.toLocaleString()}`} trend="$1,200" trendType="up" icon={Wallet} index={3} />
+            <StatCard
+              label="Total Budget"
+              value={`$${(summary?.totalBudget ?? 0).toLocaleString()}`}
+              trend="From budgets"
+              trendType="up"
+              icon={DollarSign}
+              index={0}
+              accent
+            />
+            <StatCard
+              label="Total Spent"
+              value={`$${(summary?.totalSpent ?? 0).toLocaleString()}`}
+              trend={
+                (summary?.totalBudget ?? 0) > 0
+                  ? `${Math.round(((summary?.totalSpent ?? 0) / (summary?.totalBudget ?? 1)) * 100)}% used`
+                  : '0% used'
+              }
+              trendType={(summary?.totalSpent ?? 0) > (summary?.totalBudget ?? 0) ? 'down' : 'up'}
+              icon={TrendingDown}
+              index={1}
+            />
+            <StatCard
+              label="Over Budget"
+              value={`${summary?.overBudgetCount ?? 0}`}
+              trend="Categories exceeded"
+              trendType="down"
+              icon={AlertTriangle}
+              index={2}
+            />
+            <StatCard
+              label="Budget Categories"
+              value={`${summary?.budgetCount ?? 0}`}
+              trend="Active budgets"
+              trendType="up"
+              icon={Wallet}
+              index={3}
+            />
           </>
         )}
       </div>
@@ -61,8 +143,12 @@ export default function DashboardPage() {
               variants={itemVariants}
               headerRight={
                 <div className="flex items-center gap-4 text-[11px] font-medium">
-                  <span className="flex items-center gap-1.5 text-success"><span className="w-2 h-2 rounded-full bg-success" /> Income</span>
-                  <span className="flex items-center gap-1.5 text-primary"><span className="w-2 h-2 rounded-full bg-primary" /> Expenses</span>
+                  <span className="flex items-center gap-1.5 text-success">
+                    <span className="w-2 h-2 rounded-full bg-success" /> Income
+                  </span>
+                  <span className="flex items-center gap-1.5 text-primary">
+                    <span className="w-2 h-2 rounded-full bg-primary" /> Expenses
+                  </span>
                 </div>
               }
             >
@@ -136,7 +222,9 @@ export default function DashboardPage() {
           <div className="px-6 py-5 flex justify-between items-center">
             <h3 className="font-semibold text-foreground tracking-tight">Recent Transactions</h3>
             <Button variant="ghost" size="sm" className="text-[11px] text-primary hover:text-primary font-semibold h-8 px-2.5 rounded-lg gap-1" asChild>
-              <Link to="/transactions">View all <ArrowUpRight className="w-3 h-3" /></Link>
+              <Link to="/transactions">
+                View all <ArrowUpRight className="w-3 h-3" />
+              </Link>
             </Button>
           </div>
           {isLoading ? (
@@ -159,10 +247,12 @@ export default function DashboardPage() {
           <div className="px-6 py-5 flex justify-between items-center">
             <div>
               <h3 className="font-semibold text-foreground tracking-tight">Budget Progress</h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">March 2025</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Current month</p>
             </div>
             <Button variant="ghost" size="sm" className="text-[11px] text-primary hover:text-primary font-semibold h-8 px-2.5 rounded-lg gap-1" asChild>
-              <Link to="/budgets">Manage <ArrowUpRight className="w-3 h-3" /></Link>
+              <Link to="/budgets">
+                Manage <ArrowUpRight className="w-3 h-3" />
+              </Link>
             </Button>
           </div>
           <div className="px-6 pb-6 space-y-5">
@@ -206,33 +296,57 @@ export default function DashboardPage() {
         <motion.div variants={itemVariants} className="bg-card border border-border rounded-2xl shadow-card overflow-hidden">
           <div className="px-6 py-5">
             <h3 className="font-semibold text-foreground tracking-tight">Quick Insights</h3>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Key metrics at a glance</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Budget-based overview</p>
           </div>
           <div className="px-6 pb-6 space-y-0 divide-y divide-border">
-            {isLoading
-              ? Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="py-4 flex justify-between items-center animate-pulse">
-                    <div>
-                      <div className="h-3 w-32 bg-secondary rounded" />
-                      <div className="h-4 w-16 bg-secondary rounded mt-1.5" />
-                    </div>
-                    <div className="h-3 w-20 bg-secondary rounded" />
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="py-4 flex justify-between items-center animate-pulse">
+                  <div>
+                    <div className="h-3 w-32 bg-secondary rounded" />
+                    <div className="h-4 w-16 bg-secondary rounded mt-1.5" />
                   </div>
-                ))
-              : [
-                  { label: 'Top Spending Category', value: summary.topCategory.name, sub: `$${summary.topCategory.amount.toLocaleString()} this month`, color: 'text-chart-1' },
-                  { label: 'Largest Expense', value: summary.largestExpense.merchant, sub: `$${summary.largestExpense.amount.toLocaleString()} on ${summary.largestExpense.date}`, color: 'text-chart-4' },
-                  { label: 'Budget Remaining', value: `$${summary.budgetRemaining}`, sub: 'Across all categories', color: 'text-success' },
-                  { label: 'Savings Rate', value: `${summary.savingsRate}%`, sub: 'Based on net income', color: 'text-primary' },
-                ].map((insight) => (
-                  <div key={insight.label} className="flex justify-between items-center py-4 first:pt-0 last:pb-0">
-                    <div>
-                      <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">{insight.label}</p>
-                      <p className={`text-sm font-bold mt-0.5 ${insight.color}`}>{insight.value}</p>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground text-right">{insight.sub}</p>
+                  <div className="h-3 w-20 bg-secondary rounded" />
+                </div>
+              ))
+            ) : (
+              [
+                {
+                  label: 'Total Budget',
+                  value: `$${(summary?.totalBudget ?? 0).toLocaleString()}`,
+                  sub: 'Across all categories',
+                  color: 'text-primary',
+                },
+                {
+                  label: 'Total Spent',
+                  value: `$${(summary?.totalSpent ?? 0).toLocaleString()}`,
+                  sub: 'Current budget usage',
+                  color: 'text-chart-4',
+                },
+                {
+                  label: 'Over Budget',
+                  value: `${summary?.overBudgetCount ?? 0}`,
+                  sub: 'Categories exceeded',
+                  color: 'text-destructive',
+                },
+                {
+                  label: 'Budget Categories',
+                  value: `${summary?.budgetCount ?? 0}`,
+                  sub: 'Active categories',
+                  color: 'text-success',
+                },
+              ].map((insight) => (
+                <div key={insight.label} className="flex justify-between items-center py-4 first:pt-0 last:pb-0">
+                  <div>
+                    <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider">
+                      {insight.label}
+                    </p>
+                    <p className={`text-sm font-bold mt-0.5 ${insight.color}`}>{insight.value}</p>
                   </div>
-                ))}
+                  <p className="text-[11px] text-muted-foreground text-right">{insight.sub}</p>
+                </div>
+              ))
+            )}
           </div>
         </motion.div>
       </div>
