@@ -28,8 +28,8 @@ import {
   type BankAccountResponse,
   type TransactionResponse,
 } from '@/services/financeDataService';
+import { getBudgets, type BudgetApiResponse } from '@/services/budgetService';
 import {
-  budgets,
   monthlySpending,
   categoryBreakdown,
 } from '@/data/mockData';
@@ -39,52 +39,55 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
   const [accounts, setAccounts] = useState<BankAccountResponse[]>([]);
   const [transactions, setTransactions] = useState<TransactionResponse[]>([]);
+  const [budgets, setBudgets] = useState<BudgetApiResponse[]>([]);
   const [userName, setUserName] = useState('User');
 
   useEffect(() => {
     let mounted = true;
-  
+
     const loadDashboard = async () => {
       try {
         const storedUser = localStorage.getItem('user');
-  
+
         if (!storedUser) {
           setIsLoading(false);
           return;
         }
-  
+
         const parsedUser = JSON.parse(storedUser);
         const email = parsedUser?.email;
         const fullName = parsedUser?.fullName || 'User';
-  
+
         setUserName(fullName.split(' ')[0] || 'User');
-  
+
         if (!email) {
           setIsLoading(false);
           return;
         }
-  
-        const [summaryData, accountsData, transactionsData] =
+
+        const [summaryData, accountsData, transactionsData, budgetsData] =
           await Promise.all([
             getDashboardSummary(email),
             getAccounts(email),
             getTransactions(email),
+            getBudgets(email),
           ]);
-  
+
         if (!mounted) return;
-  
+
         setSummary(summaryData);
         setAccounts(accountsData);
         setTransactions(transactionsData);
+        setBudgets(budgetsData);
       } catch (error) {
         console.error('Failed to load dashboard:', error);
       } finally {
         if (mounted) setIsLoading(false);
       }
     };
-  
+
     loadDashboard();
-  
+
     return () => {
       mounted = false;
     };
@@ -128,7 +131,7 @@ export default function DashboardPage() {
           Good morning, {userName}
         </h1>
         <p className="text-sm text-muted-foreground mt-1.5">
-          Here's your financial overview.
+          Here&apos;s your financial overview.
         </p>
       </motion.div>
 
@@ -241,7 +244,7 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : mappedAccounts.length > 0 ? (
             <div className="divide-y divide-border">
               {mappedAccounts.slice(0, 3).map((acc) => (
                 <div
@@ -270,6 +273,10 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+          ) : (
+            <div className="px-6 py-6 text-sm text-muted-foreground">
+              No accounts available yet.
+            </div>
           )}
         </motion.div>
 
@@ -287,11 +294,15 @@ export default function DashboardPage() {
             <div className="divide-y divide-border">
               <TransactionRowSkeleton count={6} />
             </div>
-          ) : (
+          ) : mappedTransactions.length > 0 ? (
             <div className="divide-y divide-border">
               {mappedTransactions.slice(0, 6).map((tx, i) => (
                 <TransactionRow key={tx.id} transaction={tx} index={i} compact />
               ))}
+            </div>
+          ) : (
+            <div className="px-6 py-6 text-sm text-muted-foreground">
+              No transactions available yet.
             </div>
           )}
         </motion.div>
@@ -312,42 +323,48 @@ export default function DashboardPage() {
           </div>
 
           <div className="px-6 pb-6 space-y-5">
-            {isLoading
-              ? Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="animate-pulse">
-                    <div className="flex justify-between mb-2">
-                      <div className="h-4 w-24 bg-secondary rounded" />
-                      <div className="h-3 w-16 bg-secondary rounded" />
-                    </div>
-                    <div className="h-1.5 bg-secondary rounded-full" />
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="flex justify-between mb-2">
+                    <div className="h-4 w-24 bg-secondary rounded" />
+                    <div className="h-3 w-16 bg-secondary rounded" />
                   </div>
-                ))
-              : budgets.slice(0, 4).map((b) => {
-                  const pct = Math.min((b.spent / b.limit) * 100, 100);
-                  const over = b.spent > b.limit;
-                  return (
-                    <div key={b.id}>
-                      <div className="flex justify-between text-sm mb-2">
-                        <span className="text-foreground font-medium flex items-center gap-2">
-                          <span className="text-base">{b.icon}</span> {b.category}
-                        </span>
-                        <span className="text-muted-foreground tabular-nums text-[12px]">
-                          ${b.spent} <span className="text-muted-foreground/50">/ ${b.limit}</span>
-                        </span>
-                      </div>
-                      <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${pct}%` }}
-                          transition={{ duration: 0.6, delay: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-                          className={`h-full rounded-full ${
-                            over ? 'bg-destructive' : pct > 75 ? 'bg-warning' : 'bg-primary'
-                          }`}
-                        />
-                      </div>
+                  <div className="h-1.5 bg-secondary rounded-full" />
+                </div>
+              ))
+            ) : budgets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No budgets available yet.</p>
+            ) : (
+              budgets.slice(0, 4).map((b) => {
+                const pct = Math.min((b.spentAmount / b.monthlyLimit) * 100, 100);
+                const over = b.spentAmount > b.monthlyLimit;
+
+                return (
+                  <div key={b.id}>
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-foreground font-medium flex items-center gap-2">
+                        <span className="text-base">💰</span> {b.categoryName}
+                      </span>
+                      <span className="text-muted-foreground tabular-nums text-[12px]">
+                        ${b.spentAmount}{' '}
+                        <span className="text-muted-foreground/50">/ ${b.monthlyLimit}</span>
+                      </span>
                     </div>
-                  );
-                })}
+                    <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.6, delay: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+                        className={`h-full rounded-full ${
+                          over ? 'bg-destructive' : pct > 75 ? 'bg-warning' : 'bg-primary'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </motion.div>
 

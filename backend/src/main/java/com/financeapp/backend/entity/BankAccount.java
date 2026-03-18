@@ -18,6 +18,9 @@ public class BankAccount {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(unique = true)
+    private String plaidAccountId;
+
     @Column(nullable = false)
     private String institutionName;
 
@@ -32,6 +35,10 @@ public class BankAccount {
 
     @Column(nullable = false)
     private Double availableBalance;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bank_item_id")
+    private BankItem bankItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
